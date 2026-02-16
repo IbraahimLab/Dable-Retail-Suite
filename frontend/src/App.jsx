@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import "./index.css";
 import { apiRequest } from "./api";
 import LoginPage from "./tabs/LoginPage";
@@ -13,16 +14,27 @@ import AdminTab from "./tabs/AdminTab";
 
 const SESSION_KEY = "dable-session";
 
-const tabs = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "products", label: "Products & Stock" },
-  { id: "purchases", label: "Suppliers & Purchases" },
-  { id: "sales", label: "Customers & Sales" },
-  { id: "expenses", label: "Expenses" },
-  { id: "transfers", label: "Transfers" },
-  { id: "reports", label: "Reports" },
-  { id: "admin", label: "Admin & Backup" },
+const navItems = [
+  { path: "/dashboard", label: "Overview" },
+  { path: "/products", label: "Products & Stock" },
+  { path: "/purchases", label: "Purchases" },
+  { path: "/sales", label: "Sales & Customers" },
+  { path: "/expenses", label: "Expenses" },
+  { path: "/transfers", label: "Branch Transfers" },
+  { path: "/reports", label: "Reports" },
+  { path: "/admin", label: "Admin Tools", roles: ["ADMIN", "MANAGER"] },
 ];
+
+const pageTitles = {
+  "/dashboard": "Business Dashboard",
+  "/products": "Inventory Workspace",
+  "/purchases": "Purchase Control",
+  "/sales": "Sales Invoices",
+  "/expenses": "Expense Center",
+  "/transfers": "Multi-Branch Transfers",
+  "/reports": "Analytics & Reporting",
+  "/admin": "System Administration",
+};
 
 function storedSession() {
   try {
@@ -37,8 +49,8 @@ function storedSession() {
 }
 
 function App() {
+  const location = useLocation();
   const [session, setSession] = useState(storedSession);
-  const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedBranchId, setSelectedBranchId] = useState(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -126,8 +138,11 @@ function App() {
     setUnits(unitList);
     setExpenseCategories(expCatList);
 
-    if (!selectedBranchId && me.branchId) {
-      setSelectedBranchId(me.branchId);
+    if (!selectedBranchId) {
+      const fallbackBranchId = me.branchId || branchList[0]?.id || null;
+      if (fallbackBranchId) {
+        setSelectedBranchId(Number(fallbackBranchId));
+      }
     }
 
     try {
@@ -186,7 +201,7 @@ function App() {
     }
     const run = async () => {
       try {
-        setStatus("Loading core data...");
+        setStatus("Syncing setup...");
         await loadCore();
       } catch (err) {
         setError(err.message);
@@ -203,7 +218,7 @@ function App() {
     }
     const run = async () => {
       try {
-        setStatus("Loading branch data...");
+        setStatus("Refreshing branch data...");
         await loadBranchData();
       } catch (err) {
         setError(err.message);
@@ -226,6 +241,7 @@ function App() {
   const refreshSales = () => loadBranchData();
   const refreshExpenses = () => loadBranchData();
   const refreshTransfers = () => loadBranchData();
+  const refreshWorkspace = () => loadBranchData();
   const refreshUsers = async () => {
     const userList = await call({ url: "/users" });
     setUsers(userList);
@@ -261,6 +277,9 @@ function App() {
   const createCustomer = async (payload) => {
     await call({ url: "/customers", method: "POST", data: payload });
     await refreshSales();
+  };
+  const loadCustomerLedger = async (customerId) => {
+    return call({ url: `/customers/${customerId}/ledger`, params: branchParams });
   };
   const createSale = async (payload) => {
     await call({ url: "/sales", method: "POST", data: payload });
@@ -360,132 +379,176 @@ function App() {
   }
 
   const data = { user, selectedBranchId };
+  const activeTitle = pageTitles[location.pathname] || "Dable Retail Suite";
+  const availableNav = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
 
   return (
-    <main className="app-shell">
-      <header className="top-bar">
-        <div>
-          <h1>Dable Retail Suite</h1>
-          <p>
-            {user?.fullName} ({user?.role}) {status ? `| ${status}` : ""}
-          </p>
-          {error ? <p className="error-text">{error}</p> : null}
+    <main className="app-shell wide">
+      <aside className="side-panel">
+        <div className="brand-panel">
+          <h1>Dable</h1>
+          <p>Retail Suite</p>
         </div>
-        <div className="top-actions">
-          {user?.role === "ADMIN" ? (
-            <select value={selectedBranchId || ""} onChange={(e) => setSelectedBranchId(Number(e.target.value))}>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
+        <nav className="side-nav">
+          {availableNav.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `side-link ${isActive ? "active" : ""}`}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="side-foot">
+          <span>{branches.length} Branches</span>
+          <span>{products.length} Products</span>
+        </div>
+      </aside>
+
+      <section className="workspace">
+        <header className="workspace-header">
+          <div>
+            <h2>{activeTitle}</h2>
+            <p>
+              {user?.fullName} ({user?.role}) {status ? `| ${status}` : ""}
+            </p>
+            {error ? <p className="error-text">{error}</p> : null}
+          </div>
+          <div className="top-actions">
+            {user?.role === "ADMIN" ? (
+              <select
+                value={selectedBranchId || ""}
+                onChange={(e) => setSelectedBranchId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="" disabled>
+                  Select branch
                 </option>
-              ))}
-            </select>
-          ) : (
-            <span className="chip">{user?.branchName}</span>
-          )}
-          <button onClick={logout}>Logout</button>
-        </div>
-      </header>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="chip">{user?.branchName}</span>
+            )}
+            <button onClick={refreshWorkspace}>Refresh</button>
+            <button onClick={logout}>Logout</button>
+          </div>
+        </header>
 
-      <nav className="tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={activeTab === tab.id ? "active" : ""}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+        <section className="hero-ribbon">
+          <strong>Invoice-first retail operation</strong>
+          <span>Connected modules: stock, purchases, sales, expenses, transfers, reporting</span>
+        </section>
 
-      <section className="content">
-        {activeTab === "dashboard" ? (
-          <DashboardTab dashboard={reports.dashboard} dailySales={reports.dailySales} />
-        ) : null}
-
-        {activeTab === "products" ? (
-          <ProductsTab
-            data={data}
-            branches={branches}
-            categories={categories}
-            units={units}
-            suppliers={suppliers}
-            products={products}
-            lowStock={lowStock}
-            onCreateProduct={createProduct}
-            onAdjustStock={adjustStock}
-            onReloadProducts={refreshProducts}
-          />
-        ) : null}
-
-        {activeTab === "purchases" ? (
-          <PurchasesTab
-            data={data}
-            branches={branches}
-            suppliers={suppliers}
-            products={products}
-            purchases={purchases}
-            onCreateSupplier={createSupplier}
-            onCreatePurchase={createPurchase}
-            onAddPurchasePayment={addPurchasePayment}
-            onReloadPurchases={refreshPurchases}
-          />
-        ) : null}
-
-        {activeTab === "sales" ? (
-          <SalesTab
-            data={data}
-            branches={branches}
-            customers={customers}
-            products={products}
-            sales={sales}
-            onCreateCustomer={createCustomer}
-            onCreateSale={createSale}
-            onAddSalePayment={addSalePayment}
-            onCreateReturn={createReturn}
-            onReloadSales={refreshSales}
-          />
-        ) : null}
-
-        {activeTab === "expenses" ? (
-          <ExpensesTab
-            data={data}
-            branches={branches}
-            expenseCategories={expenseCategories}
-            expenses={expenses}
-            onCreateExpense={createExpense}
-            onReloadExpenses={refreshExpenses}
-          />
-        ) : null}
-
-        {activeTab === "transfers" ? (
-          <TransfersTab
-            branches={branches}
-            products={products}
-            transfers={transfers}
-            onCreateTransfer={createTransfer}
-            onReloadTransfers={refreshTransfers}
-          />
-        ) : null}
-
-        {activeTab === "reports" ? <ReportsTab reports={reports} onLoadReports={loadReports} /> : null}
-
-        {activeTab === "admin" ? (
-          <AdminTab
-            data={data}
-            roles={roles}
-            branches={branches}
-            users={users}
-            auditLogs={auditLogs}
-            backups={backups}
-            onCreateUser={createUser}
-            onLoadAuditLogs={loadAuditLogs}
-            onCreateBackup={createBackup}
-            onRestoreBackup={restoreBackup}
-            onReloadUsers={refreshUsers}
-          />
-        ) : null}
+        <section className="content">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardTab dashboard={reports.dashboard} dailySales={reports.dailySales} />} />
+            <Route
+              path="/products"
+              element={
+                <ProductsTab
+                  data={data}
+                  branches={branches}
+                  categories={categories}
+                  units={units}
+                  suppliers={suppliers}
+                  products={products}
+                  lowStock={lowStock}
+                  onCreateProduct={createProduct}
+                  onAdjustStock={adjustStock}
+                  onReloadProducts={refreshProducts}
+                />
+              }
+            />
+            <Route
+              path="/purchases"
+              element={
+                <PurchasesTab
+                  data={data}
+                  branches={branches}
+                  suppliers={suppliers}
+                  products={products}
+                  purchases={purchases}
+                  onCreateSupplier={createSupplier}
+                  onCreatePurchase={createPurchase}
+                  onAddPurchasePayment={addPurchasePayment}
+                  onReloadPurchases={refreshPurchases}
+                />
+              }
+            />
+            <Route
+              path="/sales"
+              element={
+                <SalesTab
+                  data={data}
+                  branches={branches}
+                  customers={customers}
+                  products={products}
+                  sales={sales}
+                  onCreateCustomer={createCustomer}
+                  onCreateSale={createSale}
+                  onAddSalePayment={addSalePayment}
+                  onCreateReturn={createReturn}
+                  onLoadCustomerLedger={loadCustomerLedger}
+                  onReloadSales={refreshSales}
+                />
+              }
+            />
+            <Route
+              path="/expenses"
+              element={
+                <ExpensesTab
+                  data={data}
+                  branches={branches}
+                  expenseCategories={expenseCategories}
+                  expenses={expenses}
+                  onCreateExpense={createExpense}
+                  onReloadExpenses={refreshExpenses}
+                />
+              }
+            />
+            <Route
+              path="/transfers"
+              element={
+                <TransfersTab
+                  branches={branches}
+                  products={products}
+                  transfers={transfers}
+                  onCreateTransfer={createTransfer}
+                  onReloadTransfers={refreshTransfers}
+                />
+              }
+            />
+            <Route path="/reports" element={<ReportsTab reports={reports} onLoadReports={loadReports} />} />
+            <Route
+              path="/admin"
+              element={
+                user?.role === "ADMIN" || user?.role === "MANAGER" ? (
+                  <AdminTab
+                    data={data}
+                    roles={roles}
+                    branches={branches}
+                    users={users}
+                    auditLogs={auditLogs}
+                    backups={backups}
+                    onCreateUser={createUser}
+                    onLoadAuditLogs={loadAuditLogs}
+                    onCreateBackup={createBackup}
+                    onRestoreBackup={restoreBackup}
+                    onReloadUsers={refreshUsers}
+                  />
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              }
+            />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </section>
       </section>
     </main>
   );

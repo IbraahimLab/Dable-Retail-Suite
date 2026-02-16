@@ -267,11 +267,71 @@ router.get("/suppliers/:id/performance", async (req, res) => {
 
 router.get("/customers", async (req, res) => {
   const branchId = queryBranchId(req);
+  const search = String(req.query.search || "").trim();
   const customers = await prisma.customer.findMany({
-    where: { branchId },
+    where: {
+      branchId,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search } },
+              { phone: { contains: search } },
+              { email: { contains: search } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { name: "asc" },
   });
-  res.json(customers);
+  if (customers.length === 0) {
+    return res.json([]);
+  }
+
+  const customerIds = customers.map((customer) => customer.id);
+  const [ledgerByType, salesAgg] = await Promise.all([
+    prisma.customerLedger.groupBy({
+      by: ["customerId", "type"],
+      where: { branchId, customerId: { in: customerIds } },
+      _sum: { amount: true },
+    }),
+    prisma.salesInvoice.groupBy({
+      by: ["customerId"],
+      where: {
+        branchId,
+        customerId: { in: customerIds },
+      },
+      _count: { id: true },
+      _sum: { total: true, dueAmount: true },
+      _max: { invoiceDate: true },
+    }),
+  ]);
+
+  const ledgerMap = new Map();
+  for (const row of ledgerByType) {
+    const current = ledgerMap.get(row.customerId) || { debit: 0, credit: 0 };
+    if (row.type === "DEBIT") {
+      current.debit += Number(row._sum.amount || 0);
+    } else {
+      current.credit += Number(row._sum.amount || 0);
+    }
+    ledgerMap.set(row.customerId, current);
+  }
+
+  const salesMap = new Map(salesAgg.map((row) => [row.customerId, row]));
+  return res.json(
+    customers.map((customer) => {
+      const ledger = ledgerMap.get(customer.id) || { debit: 0, credit: 0 };
+      const sales = salesMap.get(customer.id);
+      return {
+        ...customer,
+        outstanding: ledger.debit - ledger.credit,
+        purchaseCount: sales?._count?.id || 0,
+        totalSpent: Number(sales?._sum?.total || 0),
+        totalDueOnInvoices: Number(sales?._sum?.dueAmount || 0),
+        lastPurchaseDate: sales?._max?.invoiceDate || null,
+      };
+    }),
+  );
 });
 
 router.post(
@@ -323,8 +383,15 @@ router.put(
 
 router.get("/customers/:id/ledger", async (req, res) => {
   const customerId = Number(req.params.id);
+  const branchId = queryBranchId(req);
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, branchId },
+  });
+  if (!customer) {
+    return res.status(404).json({ message: "Customer not found." });
+  }
   const ledger = await prisma.customerLedger.findMany({
-    where: { customerId },
+    where: { customerId, branchId },
     include: {
       salesInvoice: { select: { number: true } },
     },
@@ -336,7 +403,32 @@ router.get("/customers/:id/ledger", async (req, res) => {
     }
     return acc - Number(entry.amount);
   }, 0);
-  res.json({ entries: ledger, outstanding });
+  res.json({ customer, entries: ledger, outstanding });
+});
+
+router.get("/customers/:id/sales", async (req, res) => {
+  const customerId = Number(req.params.id);
+  const branchId = queryBranchId(req);
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, branchId },
+  });
+  if (!customer) {
+    return res.status(404).json({ message: "Customer not found." });
+  }
+  const sales = await prisma.salesInvoice.findMany({
+    where: { customerId, branchId },
+    include: {
+      items: { include: { product: true } },
+      payments: true,
+      returns: { include: { items: true } },
+    },
+    orderBy: { invoiceDate: "desc" },
+    take: Number(req.query.take || 20),
+  });
+  res.json({
+    customer,
+    sales,
+  });
 });
 
 export default router;
