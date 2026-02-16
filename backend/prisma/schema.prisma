@@ -1,0 +1,535 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum RoleCode {
+  ADMIN
+  MANAGER
+  CASHIER
+  STOCK_KEEPER
+}
+
+enum MovementType {
+  OPENING
+  PURCHASE
+  SALE
+  RETURN
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum LedgerType {
+  DEBIT
+  CREDIT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PAID
+  PARTIAL
+  UNPAID
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+enum TransferStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  EXPORT
+  BACKUP
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  code        RoleCode @unique
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id        Int              @id @default(autoincrement())
+  key       String           @unique
+  label     String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  roles     RolePermission[]
+}
+
+model RolePermission {
+  id           Int        @id @default(autoincrement())
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model Branch {
+  id           Int             @id @default(autoincrement())
+  code         String          @unique
+  name         String
+  address      String?
+  phone        String?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  users        User[]
+  products     Product[]
+  customers    Customer[]
+  suppliers    Supplier[]
+  purchases    PurchaseInvoice[]
+  sales        SalesInvoice[]
+  expenses     Expense[]
+  batches      StockBatch[]
+  stockMoves   StockMovement[]
+  ledgers      CustomerLedger[]
+  sourceTx     StockTransfer[] @relation("sourceBranch")
+  targetTx     StockTransfer[] @relation("targetBranch")
+  settings     Setting[]
+}
+
+model User {
+  id           Int          @id @default(autoincrement())
+  username     String       @unique
+  fullName     String
+  passwordHash String
+  roleId       Int
+  branchId     Int?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  role         Role         @relation(fields: [roleId], references: [id])
+  branch       Branch?      @relation(fields: [branchId], references: [id])
+  sales        SalesInvoice[]
+  purchases    PurchaseInvoice[]
+  expenses     Expense[]
+  auditLogs    AuditLog[]
+  transfers    StockTransfer[]
+  returns      SalesReturn[]
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Unit {
+  id           Int           @id @default(autoincrement())
+  code         String        @unique
+  name         String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  products     Product[]     @relation("baseUnit")
+  productUnits ProductUnit[]
+}
+
+model Supplier {
+  id            Int               @id @default(autoincrement())
+  branchId      Int
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  rating        Int               @default(5)
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  branch        Branch            @relation(fields: [branchId], references: [id])
+  products      Product[]
+  purchases     PurchaseInvoice[]
+  payments      SupplierPayment[]
+
+  @@index([branchId])
+}
+
+model Customer {
+  id           Int                 @id @default(autoincrement())
+  branchId     Int
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  loyaltyPoints Int               @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  branch       Branch             @relation(fields: [branchId], references: [id])
+  sales        SalesInvoice[]
+  ledger       CustomerLedger[]
+  loyalty      LoyaltyTransaction[]
+
+  @@index([branchId])
+}
+
+model Product {
+  id            Int              @id @default(autoincrement())
+  branchId      Int
+  name          String
+  sku           String
+  barcode       String?
+  categoryId    Int?
+  baseUnitId    Int
+  supplierId    Int?
+  minStock      Float            @default(0)
+  sellPrice     Float            @default(0)
+  description   String?
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  branch        Branch           @relation(fields: [branchId], references: [id])
+  category      Category?        @relation(fields: [categoryId], references: [id])
+  baseUnit      Unit             @relation("baseUnit", fields: [baseUnitId], references: [id])
+  supplier      Supplier?        @relation(fields: [supplierId], references: [id])
+  units         ProductUnit[]
+  purchaseItems PurchaseItem[]
+  salesItems    SalesItem[]
+  batches       StockBatch[]
+  stockMoves    StockMovement[]
+  returnItems   SalesReturnItem[]
+  transferItems StockTransferItem[]
+
+  @@unique([branchId, sku])
+  @@index([branchId, name])
+}
+
+model ProductUnit {
+  id               Int     @id @default(autoincrement())
+  productId        Int
+  unitId           Int
+  conversionFactor Float   @default(1)
+  isDefault        Boolean @default(false)
+  product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit             Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, unitId])
+}
+
+model StockBatch {
+  id                Int        @id @default(autoincrement())
+  productId         Int
+  branchId          Int
+  purchaseItemId    Int?
+  batchNumber       String?
+  expiryDate        DateTime?
+  quantityRemaining Float      @default(0)
+  unitCost          Float      @default(0)
+  sellPrice         Float      @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  product           Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch            Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  purchaseItem      PurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+
+  @@index([productId, branchId])
+  @@index([expiryDate])
+}
+
+model StockMovement {
+  id            Int          @id @default(autoincrement())
+  productId     Int
+  branchId      Int
+  type          MovementType
+  quantity      Float
+  unitCost      Float        @default(0)
+  referenceType String?
+  referenceId   Int?
+  note          String?
+  createdById   Int?
+  createdAt     DateTime     @default(now())
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch        Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([productId, branchId, createdAt])
+}
+
+model PurchaseInvoice {
+  id          Int            @id @default(autoincrement())
+  number      String         @unique
+  branchId    Int
+  supplierId  Int
+  status      PurchaseStatus @default(RECEIVED)
+  invoiceDate DateTime       @default(now())
+  subtotal    Float          @default(0)
+  discount    Float          @default(0)
+  tax         Float          @default(0)
+  total       Float          @default(0)
+  paidAmount  Float          @default(0)
+  dueAmount   Float          @default(0)
+  note        String?
+  createdById Int?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  branch      Branch         @relation(fields: [branchId], references: [id])
+  supplier    Supplier       @relation(fields: [supplierId], references: [id])
+  createdBy   User?          @relation(fields: [createdById], references: [id])
+  items       PurchaseItem[]
+  payments    SupplierPayment[]
+
+  @@index([branchId, invoiceDate])
+}
+
+model PurchaseItem {
+  id              Int             @id @default(autoincrement())
+  purchaseInvoiceId Int
+  productId       Int
+  quantity        Float
+  unitCost        Float
+  discount        Float           @default(0)
+  lineTotal       Float
+  batchNumber     String?
+  expiryDate      DateTime?
+  createdAt       DateTime        @default(now())
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id])
+  batches         StockBatch[]
+
+  @@index([purchaseInvoiceId])
+}
+
+model SupplierPayment {
+  id                Int             @id @default(autoincrement())
+  purchaseInvoiceId Int?
+  supplierId        Int
+  amount            Float
+  paymentDate       DateTime        @default(now())
+  paymentMethod     String          @default("CASH")
+  reference         String?
+  note              String?
+  createdAt         DateTime        @default(now())
+  purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
+  supplier          Supplier        @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, paymentDate])
+}
+
+model SalesInvoice {
+  id          Int           @id @default(autoincrement())
+  number      String        @unique
+  branchId    Int
+  customerId  Int?
+  status      InvoiceStatus @default(UNPAID)
+  invoiceDate DateTime      @default(now())
+  subtotal    Float         @default(0)
+  discount    Float         @default(0)
+  tax         Float         @default(0)
+  total       Float         @default(0)
+  paidAmount  Float         @default(0)
+  dueAmount   Float         @default(0)
+  note        String?
+  createdById Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  branch      Branch        @relation(fields: [branchId], references: [id])
+  customer    Customer?     @relation(fields: [customerId], references: [id])
+  createdBy   User?         @relation(fields: [createdById], references: [id])
+  items       SalesItem[]
+  payments    SalesPayment[]
+  returns     SalesReturn[]
+  ledger      CustomerLedger[]
+
+  @@index([branchId, invoiceDate])
+}
+
+model SalesItem {
+  id             Int          @id @default(autoincrement())
+  salesInvoiceId Int
+  productId      Int
+  quantity       Float
+  unitPrice      Float
+  discount       Float        @default(0)
+  lineTotal      Float
+  costOfGoods    Float        @default(0)
+  createdAt      DateTime     @default(now())
+  salesInvoice   SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id])
+  returnItems    SalesReturnItem[]
+
+  @@index([salesInvoiceId])
+}
+
+model SalesPayment {
+  id           Int          @id @default(autoincrement())
+  salesInvoiceId Int?
+  amount       Float
+  paymentDate  DateTime     @default(now())
+  paymentMethod String      @default("CASH")
+  reference    String?
+  note         String?
+  createdAt    DateTime     @default(now())
+  salesInvoice SalesInvoice? @relation(fields: [salesInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([paymentDate])
+}
+
+model SalesReturn {
+  id            Int             @id @default(autoincrement())
+  number        String          @unique
+  salesInvoiceId Int
+  returnDate    DateTime        @default(now())
+  total         Float           @default(0)
+  refundAmount  Float           @default(0)
+  reason        String?
+  createdById   Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  salesInvoice  SalesInvoice    @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  createdBy     User?           @relation(fields: [createdById], references: [id])
+  items         SalesReturnItem[]
+
+  @@index([salesInvoiceId, returnDate])
+}
+
+model SalesReturnItem {
+  id            Int         @id @default(autoincrement())
+  salesReturnId Int
+  salesItemId   Int?
+  productId     Int
+  quantity      Float
+  unitPrice     Float
+  lineTotal     Float
+  createdAt     DateTime    @default(now())
+  salesReturn   SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  salesItem     SalesItem?  @relation(fields: [salesItemId], references: [id], onDelete: SetNull)
+  product       Product     @relation(fields: [productId], references: [id])
+}
+
+model CustomerLedger {
+  id            Int          @id @default(autoincrement())
+  customerId    Int
+  branchId      Int
+  salesInvoiceId Int?
+  type          LedgerType
+  amount        Float
+  note          String?
+  createdAt     DateTime     @default(now())
+  customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  branch        Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  salesInvoice  SalesInvoice? @relation(fields: [salesInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+}
+
+model LoyaltyTransaction {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  points     Int
+  type       String
+  note       String?
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model ExpenseCategory {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expenses  Expense[]
+}
+
+model Expense {
+  id           Int             @id @default(autoincrement())
+  branchId     Int
+  categoryId   Int?
+  amount       Float
+  expenseDate  DateTime        @default(now())
+  paymentMethod String         @default("CASH")
+  description  String?
+  receiptPath  String?
+  createdById  Int?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  branch       Branch          @relation(fields: [branchId], references: [id])
+  category     ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy    User?           @relation(fields: [createdById], references: [id])
+
+  @@index([branchId, expenseDate])
+}
+
+model StockTransfer {
+  id             Int             @id @default(autoincrement())
+  number         String          @unique
+  sourceBranchId Int
+  targetBranchId Int
+  transferDate   DateTime        @default(now())
+  status         TransferStatus  @default(COMPLETED)
+  note           String?
+  createdById    Int?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sourceBranch   Branch          @relation("sourceBranch", fields: [sourceBranchId], references: [id])
+  targetBranch   Branch          @relation("targetBranch", fields: [targetBranchId], references: [id])
+  createdBy      User?           @relation(fields: [createdById], references: [id])
+  items          StockTransferItem[]
+
+  @@index([sourceBranchId, targetBranchId, transferDate])
+}
+
+model StockTransferItem {
+  id              Int           @id @default(autoincrement())
+  stockTransferId Int
+  productId       Int
+  quantity        Float
+  unitCost        Float         @default(0)
+  createdAt       DateTime      @default(now())
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  product         Product       @relation(fields: [productId], references: [id])
+}
+
+model AuditLog {
+  id          Int         @id @default(autoincrement())
+  userId      Int?
+  action      AuditAction
+  entityType  String
+  entityId    Int?
+  payload     String?
+  createdAt   DateTime    @default(now())
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, createdAt])
+}
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  branchId  Int?
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branch    Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, key])
+}
+
+model BackupHistory {
+  id        Int      @id @default(autoincrement())
+  filePath  String
+  createdAt DateTime @default(now())
+  sizeBytes Int
+}
