@@ -13,6 +13,7 @@ import expenseRoutes from "./routes/expense.routes.js";
 import transferRoutes from "./routes/transfer.routes.js";
 import reportRoutes from "./routes/report.routes.js";
 import systemRoutes from "./routes/system.routes.js";
+import goalsRoutes from "./routes/goals.routes.js";
 import { ensureDefaults } from "./lib/bootstrap.js";
 
 const app = express();
@@ -46,6 +47,7 @@ app.use("/api", expenseRoutes);
 app.use("/api", transferRoutes);
 app.use("/api", reportRoutes);
 app.use("/api", systemRoutes);
+app.use("/api", goalsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Not found." });

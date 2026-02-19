@@ -58,6 +58,24 @@ enum AuditAction {
   BACKUP
 }
 
+enum GoalPeriod {
+  YEAR
+  MONTH
+  WEEK
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model Role {
   id          Int      @id @default(autoincrement())
   code        RoleCode @unique
@@ -109,6 +127,8 @@ model Branch {
   sourceTx     StockTransfer[] @relation("sourceBranch")
   targetTx     StockTransfer[] @relation("targetBranch")
   settings     Setting[]
+  goals        Goal[]
+  dailyTasks   DailyTask[]
 }
 
 model User {
@@ -129,6 +149,8 @@ model User {
   auditLogs    AuditLog[]
   transfers    StockTransfer[]
   returns      SalesReturn[]
+  goals        Goal[]
+  dailyTasks   DailyTask[]
 }
 
 model Category {
@@ -500,6 +522,51 @@ model StockTransferItem {
   createdAt       DateTime      @default(now())
   stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
   product         Product       @relation(fields: [productId], references: [id])
+}
+
+model Goal {
+  id           Int         @id @default(autoincrement())
+  branchId     Int
+  title        String
+  description  String?
+  periodType   GoalPeriod
+  periodLabel  String
+  startDate    DateTime
+  endDate      DateTime
+  targetValue  Float?
+  currentValue Float       @default(0)
+  status       GoalStatus  @default(ACTIVE)
+  createdById  Int?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  branch       Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdBy    User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  tasks        DailyTask[]
+
+  @@index([branchId, periodType, startDate])
+  @@index([branchId, status])
+}
+
+model DailyTask {
+  id          Int          @id @default(autoincrement())
+  branchId    Int
+  goalId      Int?
+  title       String
+  description String?
+  taskDate    DateTime
+  priority    TaskPriority @default(MEDIUM)
+  isDone      Boolean      @default(false)
+  doneAt      DateTime?
+  createdById Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  goal        Goal?        @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([branchId, taskDate])
+  @@index([goalId])
+  @@index([branchId, isDone])
 }
 
 model AuditLog {

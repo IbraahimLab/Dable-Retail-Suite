@@ -12,6 +12,7 @@ import TransfersTab from "./tabs/TransfersTab";
 import ReportsTab from "./tabs/ReportsTab";
 import AdminTab from "./tabs/AdminTab";
 import AccountsTab from "./tabs/AccountsTab";
+import GoalsTab from "./tabs/GoalsTab";
 
 const SESSION_KEY = "dable-session";
 
@@ -23,6 +24,7 @@ const navItems = [
   { path: "/expenses", label: "Expenses" },
   { path: "/transfers", label: "Branch Transfers" },
   { path: "/accounts", label: "Accounts & Funds", roles: ["ADMIN", "MANAGER"] },
+  { path: "/goals", label: "Goals Planner", roles: ["ADMIN", "MANAGER"] },
   { path: "/reports", label: "Reports" },
   { path: "/admin", label: "Admin Tools", roles: ["ADMIN", "MANAGER"] },
 ];
@@ -35,6 +37,7 @@ const pageTitles = {
   "/expenses": "Expense Center",
   "/transfers": "Multi-Branch Transfers",
   "/accounts": "Cash, Bank & Card Accounts",
+  "/goals": "Goals & Daily Planner",
   "/reports": "Analytics & Reporting",
   "/admin": "System Administration",
 };
@@ -74,6 +77,8 @@ function App() {
   const [transfers, setTransfers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [backups, setBackups] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [dailyTasks, setDailyTasks] = useState([]);
   const [accounts, setAccounts] = useState({
     branchId: null,
     balances: { CASH: 0, BANK: 0, CARD: 0 },
@@ -220,6 +225,42 @@ function App() {
       setBackups([]);
     }
   }, [call, token]);
+
+  const loadGoals = useCallback(
+    async (filters = {}) => {
+      if (!token) {
+        return [];
+      }
+      const list = await call({
+        url: "/goals",
+        params: {
+          ...branchParams,
+          ...filters,
+        },
+      });
+      setGoals(list);
+      return list;
+    },
+    [branchParams, call, token],
+  );
+
+  const loadDailyTasks = useCallback(
+    async ({ date } = {}) => {
+      if (!token) {
+        return [];
+      }
+      const list = await call({
+        url: "/daily-tasks",
+        params: {
+          ...branchParams,
+          ...(date ? { date } : {}),
+        },
+      });
+      setDailyTasks(list);
+      return list;
+    },
+    [branchParams, call, token],
+  );
 
   useEffect(() => {
     if (!token) {
@@ -375,6 +416,20 @@ function App() {
   const createUser = async (payload) => {
     await call({ url: "/users", method: "POST", data: payload });
     await refreshUsers();
+  };
+  const createGoal = async (payload) => {
+    return call({ url: "/goals", method: "POST", data: payload });
+  };
+  const updateGoal = async (payload) => {
+    const { id, ...data } = payload;
+    return call({ url: `/goals/${id}`, method: "PATCH", data });
+  };
+  const createDailyTask = async (payload) => {
+    return call({ url: "/daily-tasks", method: "POST", data: payload });
+  };
+  const updateDailyTask = async (payload) => {
+    const { id, ...data } = payload;
+    return call({ url: `/daily-tasks/${id}`, method: "PATCH", data });
   };
   const loadAccounts = async () => {
     const result = await call({ url: "/finance/accounts", params: branchParams });
@@ -625,6 +680,27 @@ function App() {
                     onLoadAccounts={loadAccounts}
                     onSaveAccounts={saveAccounts}
                     onAdjustAccount={adjustAccount}
+                  />
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              }
+            />
+            <Route
+              path="/goals"
+              element={
+                user?.role === "ADMIN" || user?.role === "MANAGER" ? (
+                  <GoalsTab
+                    data={data}
+                    branches={branches}
+                    goals={goals}
+                    dailyTasks={dailyTasks}
+                    onLoadGoals={loadGoals}
+                    onCreateGoal={createGoal}
+                    onUpdateGoal={updateGoal}
+                    onLoadDailyTasks={loadDailyTasks}
+                    onCreateDailyTask={createDailyTask}
+                    onUpdateDailyTask={updateDailyTask}
                   />
                 ) : (
                   <Navigate to="/dashboard" replace />
