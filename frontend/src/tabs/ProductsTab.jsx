@@ -10,6 +10,7 @@ export default function ProductsTab({
   products,
   lowStock,
   onCreateProduct,
+  onCreateCategory,
   onAdjustStock,
   onReloadProducts,
 }) {
@@ -27,6 +28,7 @@ export default function ProductsTab({
     minStock: 0,
     sellPrice: 0,
   });
+  const [categoryForm, setCategoryForm] = useState({ name: "" });
   const [stockForm, setStockForm] = useState({
     productId: "",
     quantity: "",
@@ -53,6 +55,22 @@ export default function ProductsTab({
         minStock: 0,
         sellPrice: 0,
       });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const submitCategory = async (e) => {
+    e.preventDefault();
+    setError("");
+    try {
+      const created = await onCreateCategory({
+        name: String(categoryForm.name || "").trim(),
+      });
+      setCategoryForm({ name: "" });
+      if (created?.id) {
+        setProductForm((prev) => ({ ...prev, categoryId: String(created.id) }));
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -113,6 +131,19 @@ export default function ProductsTab({
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            New Category
+            <div className="inline-actions">
+              <input
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm({ name: e.target.value })}
+                placeholder="Create category"
+              />
+              <button type="button" onClick={submitCategory} disabled={!String(categoryForm.name || "").trim()}>
+                + Category
+              </button>
+            </div>
           </label>
           <label>
             Unit

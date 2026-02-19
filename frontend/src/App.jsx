@@ -277,6 +277,12 @@ function App() {
     await call({ url: "/products", method: "POST", data: payload });
     await refreshProducts();
   };
+  const createCategory = async (payload) => {
+    const created = await call({ url: "/categories", method: "POST", data: payload });
+    const categoryList = await call({ url: "/categories" });
+    setCategories(categoryList);
+    return created;
+  };
   const adjustStock = async (payload) => {
     await call({ url: "/stock/adjust", method: "POST", data: payload });
     await refreshProducts();
@@ -541,6 +547,7 @@ function App() {
                   products={products}
                   lowStock={lowStock}
                   onCreateProduct={createProduct}
+                  onCreateCategory={createCategory}
                   onAdjustStock={adjustStock}
                   onReloadProducts={refreshProducts}
                 />

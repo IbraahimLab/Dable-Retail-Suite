@@ -115,10 +115,17 @@ router.post(
           throw new Error(`Product ${productId} not found in selected branch.`);
         }
 
-        const unitPrice = safeNumber(item.unitPrice, Number(product.sellPrice));
+        const unitPrice = safeNumber(product.sellPrice, 0);
+        const requestedUnitPrice =
+          item.unitPrice === undefined || item.unitPrice === null
+            ? unitPrice
+            : safeNumber(item.unitPrice, unitPrice);
         const lineDiscount = safeNumber(item.discount, 0);
-        if (unitPrice < 0 || lineDiscount < 0) {
+        if (unitPrice < 0 || requestedUnitPrice < 0 || lineDiscount < 0) {
           throw new Error("Unit price and item discount must be non-negative.");
+        }
+        if (Math.abs(requestedUnitPrice - unitPrice) > 0.0001) {
+          throw new Error(`Selling price is fixed for ${product.name} at ${unitPrice.toFixed(2)}.`);
         }
         if (lineDiscount > qty * unitPrice) {
           throw new Error(`Discount cannot exceed line amount for product ${product.name}.`);

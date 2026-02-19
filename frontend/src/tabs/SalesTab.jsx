@@ -118,27 +118,34 @@ export default function SalesTab({
     const lines = saleForm.items.map((item) => {
       const product = productMap.get(Number(item.productId));
       const quantity = Number(item.quantity || 0);
-      const unitPrice = Number(item.unitPrice || 0);
+      const unitPrice = Number(product?.sellPrice ?? item.unitPrice ?? 0);
       const discount = Number(item.discount || 0);
+      const buyPrice = Number(product?.buyPrice || 0);
       const amount = quantity * unitPrice;
       const lineTotal = Math.max(amount - discount, 0);
+      const marginPerUnit = unitPrice - buyPrice;
+      const lineMargin = lineTotal - quantity * buyPrice;
       return {
         ...item,
         product,
         quantity,
         unitPrice,
+        buyPrice,
         discount,
         amount,
         lineTotal,
+        marginPerUnit,
+        lineMargin,
       };
     });
     const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
+    const grossMargin = lines.reduce((sum, line) => sum + line.lineMargin, 0);
     const discount = Number(saleForm.discount || 0);
     const tax = Number(saleForm.tax || 0);
     const total = Math.max(subtotal - discount + tax, 0);
     const paid = Math.min(Math.max(Number(saleForm.paidAmount || 0), 0), total);
     const due = Math.max(total - paid, 0);
-    return { lines, subtotal, total, paid, due };
+    return { lines, subtotal, total, paid, due, grossMargin };
   }, [productMap, saleForm.discount, saleForm.items, saleForm.paidAmount, saleForm.tax]);
 
   const saleValidationErrors = useMemo(() => {
@@ -272,7 +279,7 @@ export default function SalesTab({
       const current = { ...nextItems[index], [key]: value };
       if (key === "productId") {
         const product = productMap.get(Number(value));
-        if (product && Number(current.unitPrice || 0) <= 0) {
+        if (product) {
           current.unitPrice = Number(product.sellPrice || 0);
         }
       }
@@ -537,7 +544,8 @@ export default function SalesTab({
                     <option value="">Product</option>
                     {products.map((product) => (
                       <option key={product.id} value={product.id}>
-                        {product.name} | Stock {money(product.stock)} | ${money(product.sellPrice)}
+                        {product.name} | Buy ${money(product.buyPrice)} | Sell ${money(product.sellPrice)} | Margin $
+                        {money(Number(product.sellPrice || 0) - Number(product.buyPrice || 0))} | Stock {money(product.stock)}
                       </option>
                     ))}
                   </select>
@@ -553,9 +561,10 @@ export default function SalesTab({
                     type="number"
                     step="0.01"
                     value={line.unitPrice}
-                    onChange={(event) => changeItem(index, "unitPrice", event.target.value)}
-                    placeholder="Unit Price"
-                    required
+                    readOnly
+                    aria-readonly="true"
+                    title="Selling price is fixed from product setup"
+                    placeholder="Fixed Sell Price"
                   />
                   <input
                     type="number"
@@ -567,9 +576,15 @@ export default function SalesTab({
                   <span className="sales-line-total">
                     ${money(line.lineTotal)}
                     {line.product ? (
-                      <small className={line.quantity > availableStock ? "danger-note" : "muted-note"}>
-                        Stock: {money(availableStock)}
-                      </small>
+                      <>
+                        <small className={line.quantity > availableStock ? "danger-note" : "muted-note"}>
+                          Buy: ${money(line.buyPrice)} | Sell: ${money(line.unitPrice)} | Margin/Unit: $
+                          {money(line.marginPerUnit)}
+                        </small>
+                        <small className={line.lineMargin < 0 ? "danger-note" : "muted-note"}>
+                          Line Margin: ${money(line.lineMargin)} | Stock: {money(availableStock)}
+                        </small>
+                      </>
                     ) : null}
                   </span>
                   <button type="button" onClick={() => removeItem(index)}>
@@ -587,6 +602,7 @@ export default function SalesTab({
                 <span>Subtotal: ${money(saleInvoicePreview.subtotal)}</span>
                 <span>Total: ${money(saleInvoicePreview.total)}</span>
                 <span>Due: ${money(saleInvoicePreview.due)}</span>
+                <span>Est. Margin: ${money(saleInvoicePreview.grossMargin)}</span>
               </div>
               <button type="submit" disabled={busyAction === "sale" || !hasActiveBranch}>
                 {busyAction === "sale" ? "Saving..." : "Create Invoice"}

@@ -36,20 +36,38 @@ router.get("/products", async (req, res) => {
     orderBy: { name: "asc" },
   });
 
-  const groupedStock = await prisma.stockBatch.groupBy({
-    by: ["productId"],
+  const activeBatches = await prisma.stockBatch.findMany({
     where: {
       branchId,
       quantityRemaining: { gt: 0 },
     },
-    _sum: { quantityRemaining: true },
+    select: {
+      productId: true,
+      quantityRemaining: true,
+      unitCost: true,
+    },
   });
-  const stockMap = new Map(groupedStock.map((x) => [x.productId, x._sum.quantityRemaining || 0]));
+
+  const stockMap = new Map();
+  for (const batch of activeBatches) {
+    const productId = Number(batch.productId);
+    const quantity = Number(batch.quantityRemaining || 0);
+    const value = quantity * Number(batch.unitCost || 0);
+    const current = stockMap.get(productId) || { quantity: 0, value: 0 };
+    current.quantity += quantity;
+    current.value += value;
+    stockMap.set(productId, current);
+  }
 
   res.json(
     products.map((p) => ({
       ...p,
-      stock: stockMap.get(p.id) || 0,
+      stock: Number(stockMap.get(p.id)?.quantity || 0),
+      buyPrice: Number(
+        stockMap.get(p.id)?.quantity
+          ? stockMap.get(p.id).value / stockMap.get(p.id).quantity
+          : 0,
+      ),
     })),
   );
 });
