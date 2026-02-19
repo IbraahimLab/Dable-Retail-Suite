@@ -58,6 +58,74 @@ export default function ReportsTab({ reports, onLoadReports }) {
         </div>
       </Panel>
 
+      <Panel title="Income Statement">
+        <div className="kpi-row">
+          <div>
+            <span>Revenue</span>
+            <strong>${Number(reports.incomeStatement?.revenue || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Cost of Goods</span>
+            <strong>${Number(reports.incomeStatement?.costOfGoods || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Gross Profit</span>
+            <strong>${Number(reports.incomeStatement?.grossProfit || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Operating Expense</span>
+            <strong>${Number(reports.incomeStatement?.operatingExpense || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Net Profit</span>
+            <strong>${Number(reports.incomeStatement?.netProfit || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Net Margin</span>
+            <strong>{Number(reports.incomeStatement?.netMargin || 0).toFixed(2)}%</strong>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Cash Flow">
+        <div className="kpi-row">
+          <div>
+            <span>Total Inflow</span>
+            <strong>${Number(reports.cashFlow?.inflow || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Total Outflow</span>
+            <strong>${Number(reports.cashFlow?.outflow || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Net</span>
+            <strong>${Number(reports.cashFlow?.net || 0).toFixed(2)}</strong>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Inflow</th>
+                <th>Outflow</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(reports.cashFlow?.byMethod || []).map((row) => (
+                <tr key={row.method}>
+                  <td>{row.method}</td>
+                  <td>${Number(row.inflow || 0).toFixed(2)}</td>
+                  <td>${Number(row.outflow || 0).toFixed(2)}</td>
+                  <td>${Number(row.net || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
       <Panel title="Best Selling Products">
         <div className="chart-wrap">
           <ResponsiveContainer width="100%" height={260}>
@@ -69,6 +137,84 @@ export default function ReportsTab({ reports, onLoadReports }) {
               <Bar dataKey="quantity" fill="#de6d1f" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </Panel>
+
+      <Panel title="Accounts Receivable (Customer Outstanding)">
+        <div className="kpi-row">
+          <div>
+            <span>Customers with Due</span>
+            <strong>{Number(reports.accountsReceivable?.count || 0)}</strong>
+          </div>
+          <div>
+            <span>Total Outstanding</span>
+            <strong>${Number(reports.accountsReceivable?.totalOutstanding || 0).toFixed(2)}</strong>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Invoices</th>
+                <th>Total Sales</th>
+                <th>Due on Invoices</th>
+                <th>Outstanding</th>
+                <th>Last Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(reports.accountsReceivable?.customers || []).map((row) => (
+                <tr key={row.customerId}>
+                  <td>{row.name}</td>
+                  <td>{row.invoices}</td>
+                  <td>${Number(row.totalSales || 0).toFixed(2)}</td>
+                  <td>${Number(row.dueOnInvoices || 0).toFixed(2)}</td>
+                  <td>${Number(row.outstanding || 0).toFixed(2)}</td>
+                  <td>{row.lastInvoiceDate ? new Date(row.lastInvoiceDate).toLocaleDateString() : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      <Panel title="Accounts Payable (Supplier Outstanding)">
+        <div className="kpi-row">
+          <div>
+            <span>Suppliers with Due</span>
+            <strong>{Number(reports.accountsPayable?.count || 0)}</strong>
+          </div>
+          <div>
+            <span>Total Outstanding</span>
+            <strong>${Number(reports.accountsPayable?.totalOutstanding || 0).toFixed(2)}</strong>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Supplier</th>
+                <th>Invoices</th>
+                <th>Purchased</th>
+                <th>Paid</th>
+                <th>Outstanding</th>
+                <th>Last Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(reports.accountsPayable?.suppliers || []).map((row) => (
+                <tr key={row.supplierId}>
+                  <td>{row.name}</td>
+                  <td>{row.invoices}</td>
+                  <td>${Number(row.totalPurchased || 0).toFixed(2)}</td>
+                  <td>${Number(row.paidOnInvoices || 0).toFixed(2)}</td>
+                  <td>${Number(row.outstanding || 0).toFixed(2)}</td>
+                  <td>{row.lastInvoiceDate ? new Date(row.lastInvoiceDate).toLocaleDateString() : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Panel>
 
@@ -98,6 +244,16 @@ export default function ReportsTab({ reports, onLoadReports }) {
       </Panel>
 
       <Panel title="Expense Breakdown">
+        <div className="kpi-row">
+          <div>
+            <span>Total Expenses</span>
+            <strong>${Number(reports.expenses?.total || 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Transactions</span>
+            <strong>{Number(reports.expenses?.count || 0)}</strong>
+          </div>
+        </div>
         <div className="chips">
           {(reports.expenses?.byCategory || []).map((c) => (
             <span key={c.name} className="chip">

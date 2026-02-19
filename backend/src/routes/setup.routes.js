@@ -22,12 +22,25 @@ router.get("/branches", async (_req, res) => {
 });
 
 router.post("/branches", authorizeRoles(RoleCode.ADMIN), async (req, res) => {
+  const code = String(req.body.code || "")
+    .trim()
+    .toUpperCase();
+  const name = String(req.body.name || "").trim();
+  if (!code || !name) {
+    return res.status(400).json({ message: "code and name are required." });
+  }
+
+  const existing = await prisma.branch.findUnique({ where: { code } });
+  if (existing) {
+    return res.status(409).json({ message: "Branch code already exists." });
+  }
+
   const branch = await prisma.branch.create({
     data: {
-      code: req.body.code,
-      name: req.body.name,
-      address: req.body.address || null,
-      phone: req.body.phone || null,
+      code,
+      name,
+      address: req.body.address ? String(req.body.address).trim() : null,
+      phone: req.body.phone ? String(req.body.phone).trim() : null,
       isActive: req.body.isActive ?? true,
     },
   });
@@ -42,13 +55,34 @@ router.post("/branches", authorizeRoles(RoleCode.ADMIN), async (req, res) => {
 });
 
 router.put("/branches/:id", authorizeRoles(RoleCode.ADMIN), async (req, res) => {
+  const branchId = Number(req.params.id);
+  const current = await prisma.branch.findUnique({ where: { id: branchId } });
+  if (!current) {
+    return res.status(404).json({ message: "Branch not found." });
+  }
+
+  const code = String(req.body.code || current.code)
+    .trim()
+    .toUpperCase();
+  const name = String(req.body.name || current.name).trim();
+  if (!code || !name) {
+    return res.status(400).json({ message: "code and name are required." });
+  }
+
+  if (code !== current.code) {
+    const duplicate = await prisma.branch.findUnique({ where: { code } });
+    if (duplicate) {
+      return res.status(409).json({ message: "Branch code already exists." });
+    }
+  }
+
   const branch = await prisma.branch.update({
-    where: { id: Number(req.params.id) },
+    where: { id: branchId },
     data: {
-      code: req.body.code,
-      name: req.body.name,
-      address: req.body.address || null,
-      phone: req.body.phone || null,
+      code,
+      name,
+      address: req.body.address ? String(req.body.address).trim() : null,
+      phone: req.body.phone ? String(req.body.phone).trim() : null,
       isActive: req.body.isActive ?? true,
     },
   });

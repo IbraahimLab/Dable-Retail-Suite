@@ -7,6 +7,11 @@ import { authRequired, authorizeRoles } from "../middleware/auth.js";
 import { bodyBranchId, queryBranchId } from "../lib/scope.js";
 import { parseDateRange, safeNumber } from "../lib/common.js";
 import { logAudit } from "../lib/audit.js";
+import {
+  accountTypeFromPaymentMethod,
+  applyAccountMovement,
+  ensureAccountHasFunds,
+} from "../lib/finance.js";
 
 const router = express.Router();
 
@@ -61,18 +66,62 @@ router.post(
   upload.single("receipt"),
   async (req, res) => {
     const branchId = bodyBranchId(req, req.body.branchId);
-    const expense = await prisma.expense.create({
-      data: {
-        branchId,
-        categoryId: req.body.categoryId ? Number(req.body.categoryId) : null,
-        amount: safeNumber(req.body.amount, 0),
-        expenseDate: req.body.expenseDate ? new Date(req.body.expenseDate) : new Date(),
-        paymentMethod: req.body.paymentMethod || "CASH",
-        description: req.body.description || null,
-        receiptPath: req.file ? `/uploads/receipts/${path.basename(req.file.path)}` : null,
-        createdById: req.user.id,
-      },
-      include: { category: true, branch: true },
+    const amount = safeNumber(req.body.amount, 0);
+    if (amount <= 0) {
+      return res.status(400).json({ message: "amount must be > 0" });
+    }
+
+    const requestedPaymentMethod = String(req.body.paymentMethod || "CASH")
+      .trim()
+      .toUpperCase();
+    const accountType = accountTypeFromPaymentMethod(requestedPaymentMethod);
+    const paymentMethod = accountType || requestedPaymentMethod || "CASH";
+    const categoryId = req.body.categoryId ? Number(req.body.categoryId) : null;
+
+    const expense = await prisma.$transaction(async (tx) => {
+      if (categoryId) {
+        const category = await tx.expenseCategory.findUnique({ where: { id: categoryId } });
+        if (!category) {
+          const error = new Error("Expense category not found.");
+          error.status = 400;
+          throw error;
+        }
+      }
+
+      if (accountType) {
+        await ensureAccountHasFunds(tx, {
+          branchId,
+          paymentMethod: accountType,
+          amount,
+          purpose: "expense payment",
+        });
+      }
+
+      const created = await tx.expense.create({
+        data: {
+          branchId,
+          categoryId,
+          amount,
+          expenseDate: req.body.expenseDate ? new Date(req.body.expenseDate) : new Date(),
+          paymentMethod,
+          description: req.body.description || null,
+          receiptPath: req.file ? `/uploads/receipts/${path.basename(req.file.path)}` : null,
+          createdById: req.user.id,
+        },
+        include: { category: true, branch: true },
+      });
+
+      if (accountType) {
+        await applyAccountMovement(tx, {
+          branchId,
+          paymentMethod: accountType,
+          amount,
+          direction: "OUT",
+          purpose: "expense payment",
+        });
+      }
+
+      return created;
     });
 
     await logAudit({

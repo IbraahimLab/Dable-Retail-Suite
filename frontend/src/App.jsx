@@ -11,6 +11,7 @@ import ExpensesTab from "./tabs/ExpensesTab";
 import TransfersTab from "./tabs/TransfersTab";
 import ReportsTab from "./tabs/ReportsTab";
 import AdminTab from "./tabs/AdminTab";
+import AccountsTab from "./tabs/AccountsTab";
 
 const SESSION_KEY = "dable-session";
 
@@ -21,6 +22,7 @@ const navItems = [
   { path: "/sales", label: "Sales & Customers" },
   { path: "/expenses", label: "Expenses" },
   { path: "/transfers", label: "Branch Transfers" },
+  { path: "/accounts", label: "Accounts & Funds", roles: ["ADMIN", "MANAGER"] },
   { path: "/reports", label: "Reports" },
   { path: "/admin", label: "Admin Tools", roles: ["ADMIN", "MANAGER"] },
 ];
@@ -32,6 +34,7 @@ const pageTitles = {
   "/sales": "Sales Invoices",
   "/expenses": "Expense Center",
   "/transfers": "Multi-Branch Transfers",
+  "/accounts": "Cash, Bank & Card Accounts",
   "/reports": "Analytics & Reporting",
   "/admin": "System Administration",
 };
@@ -71,6 +74,11 @@ function App() {
   const [transfers, setTransfers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [backups, setBackups] = useState([]);
+  const [accounts, setAccounts] = useState({
+    branchId: null,
+    balances: { CASH: 0, BANK: 0, CARD: 0 },
+    total: 0,
+  });
   const [reports, setReports] = useState({
     dashboard: null,
     dailySales: null,
@@ -79,6 +87,10 @@ function App() {
     slowMoving: [],
     expenses: null,
     branchSummary: { branches: [] },
+    accountsReceivable: { customers: [] },
+    accountsPayable: { suppliers: [] },
+    cashFlow: null,
+    incomeStatement: null,
   });
 
   const token = session?.token;
@@ -157,7 +169,19 @@ function App() {
     if (!token) {
       return;
     }
-    const [supplierList, customerList, productList, lowStockList, purchaseList, salesList, expenseList, transferList, dashboard, dailySales] =
+    const [
+      supplierList,
+      customerList,
+      productList,
+      lowStockList,
+      purchaseList,
+      salesList,
+      expenseList,
+      transferList,
+      dashboard,
+      dailySales,
+      accountBalances,
+    ] =
       await Promise.all([
         call({ url: "/suppliers", params: branchParams }),
         call({ url: "/customers", params: branchParams }),
@@ -169,6 +193,7 @@ function App() {
         call({ url: "/transfers", params: branchParams }),
         call({ url: "/reports/dashboard", params: branchParams }),
         call({ url: "/reports/daily-sales", params: branchParams }),
+        call({ url: "/finance/accounts", params: branchParams }),
       ]);
     setSuppliers(supplierList);
     setCustomers(customerList);
@@ -178,6 +203,7 @@ function App() {
     setSales(salesList);
     setExpenses(expenseList);
     setTransfers(transferList);
+    setAccounts(accountBalances);
     setReports((prev) => ({ ...prev, dashboard, dailySales }));
   }, [branchParams, call, token]);
 
@@ -304,6 +330,7 @@ function App() {
       data: {
         items: payload.items,
         refundAmount: payload.refundAmount,
+        refundMethod: payload.refundMethod,
         reason: payload.reason,
       },
     });
@@ -334,9 +361,37 @@ function App() {
     await refreshTransfers();
     await refreshProducts();
   };
+  const createBranch = async (payload) => {
+    await call({ url: "/branches", method: "POST", data: payload });
+    await loadCore();
+    await loadBranchData();
+  };
   const createUser = async (payload) => {
     await call({ url: "/users", method: "POST", data: payload });
     await refreshUsers();
+  };
+  const loadAccounts = async () => {
+    const result = await call({ url: "/finance/accounts", params: branchParams });
+    setAccounts(result);
+    return result;
+  };
+  const saveAccounts = async (payload) => {
+    const result = await call({
+      url: "/finance/accounts",
+      method: "PUT",
+      data: payload,
+    });
+    setAccounts(result);
+    await loadBranchData();
+  };
+  const adjustAccount = async (payload) => {
+    const result = await call({
+      url: "/finance/accounts/adjust",
+      method: "POST",
+      data: payload,
+    });
+    setAccounts(result?.balances || accounts);
+    await loadBranchData();
   };
   const loadAuditLogs = async () => {
     const logs = await call({ url: "/audit-logs" });
@@ -357,12 +412,26 @@ function App() {
       from: range?.from || undefined,
       to: range?.to || undefined,
     };
-    const [profit, bestSelling, slowMoving, expenseReport, branchSummary] = await Promise.all([
+    const [
+      profit,
+      bestSelling,
+      slowMoving,
+      expenseReport,
+      branchSummary,
+      accountsReceivable,
+      accountsPayable,
+      cashFlow,
+      incomeStatement,
+    ] = await Promise.all([
       call({ url: "/reports/profit", params }),
       call({ url: "/reports/best-selling", params }),
       call({ url: "/reports/slow-moving", params }),
       call({ url: "/reports/expenses", params }),
       call({ url: "/reports/branch-summary", params }),
+      call({ url: "/reports/accounts-receivable", params }),
+      call({ url: "/reports/accounts-payable", params }),
+      call({ url: "/reports/cash-flow", params }),
+      call({ url: "/reports/income-statement", params }),
     ]);
     setReports((prev) => ({
       ...prev,
@@ -371,6 +440,10 @@ function App() {
       slowMoving,
       expenses: expenseReport,
       branchSummary,
+      accountsReceivable,
+      accountsPayable,
+      cashFlow,
+      incomeStatement,
     }));
   };
 
@@ -440,13 +513,22 @@ function App() {
 
         <section className="hero-ribbon">
           <strong>Invoice-first retail operation</strong>
-          <span>Connected modules: stock, purchases, sales, expenses, transfers, reporting</span>
+          <span>Connected modules: stock, purchases, sales, expenses, accounts, transfers, reporting</span>
         </section>
 
         <section className="content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardTab dashboard={reports.dashboard} dailySales={reports.dailySales} />} />
+            <Route
+              path="/dashboard"
+              element={
+                <DashboardTab
+                  dashboard={reports.dashboard}
+                  dailySales={reports.dailySales}
+                  accounts={accounts}
+                />
+              }
+            />
             <Route
               path="/products"
               element={
@@ -473,6 +555,7 @@ function App() {
                   suppliers={suppliers}
                   products={products}
                   purchases={purchases}
+                  accounts={accounts}
                   onCreateSupplier={createSupplier}
                   onCreatePurchase={createPurchase}
                   onAddPurchasePayment={addPurchasePayment}
@@ -506,6 +589,7 @@ function App() {
                   branches={branches}
                   expenseCategories={expenseCategories}
                   expenses={expenses}
+                  accounts={accounts}
                   onCreateExpense={createExpense}
                   onReloadExpenses={refreshExpenses}
                 />
@@ -523,6 +607,23 @@ function App() {
                 />
               }
             />
+            <Route
+              path="/accounts"
+              element={
+                user?.role === "ADMIN" || user?.role === "MANAGER" ? (
+                  <AccountsTab
+                    data={data}
+                    branches={branches}
+                    accounts={accounts}
+                    onLoadAccounts={loadAccounts}
+                    onSaveAccounts={saveAccounts}
+                    onAdjustAccount={adjustAccount}
+                  />
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              }
+            />
             <Route path="/reports" element={<ReportsTab reports={reports} onLoadReports={loadReports} />} />
             <Route
               path="/admin"
@@ -535,6 +636,7 @@ function App() {
                     users={users}
                     auditLogs={auditLogs}
                     backups={backups}
+                    onCreateBranch={createBranch}
                     onCreateUser={createUser}
                     onLoadAuditLogs={loadAuditLogs}
                     onCreateBackup={createBackup}

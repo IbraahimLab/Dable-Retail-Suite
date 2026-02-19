@@ -12,6 +12,11 @@ import { computeTotals } from "../lib/calculations.js";
 import { docNumber, safeNumber } from "../lib/common.js";
 import { addStockBatch, consumeStockFIFO } from "../lib/stock.js";
 import { logAudit } from "../lib/audit.js";
+import {
+  applyAccountMovement,
+  ensureAccountHasFunds,
+  normalizeAccountType,
+} from "../lib/finance.js";
 
 const router = express.Router();
 
@@ -65,6 +70,7 @@ router.post(
     if (items.length === 0) {
       return res.status(400).json({ message: "items are required." });
     }
+    const paymentMethod = normalizeAccountType(req.body.paymentMethod || "CASH");
 
     const customerId = req.body.customerId ? Number(req.body.customerId) : null;
     if (customerId) {
@@ -177,9 +183,16 @@ router.post(
             salesInvoiceId: updated.id,
             amount: totals.paid,
             paymentDate: updated.invoiceDate,
-            paymentMethod: req.body.paymentMethod || "CASH",
+            paymentMethod,
             reference: req.body.paymentReference || null,
           },
+        });
+        await applyAccountMovement(tx, {
+          branchId,
+          paymentMethod,
+          amount: totals.paid,
+          direction: "IN",
+          purpose: "sales invoice initial payment",
         });
       }
 
@@ -245,6 +258,7 @@ router.post(
     if (amount <= 0) {
       return res.status(400).json({ message: "amount must be > 0" });
     }
+    const paymentMethod = normalizeAccountType(req.body.paymentMethod || "CASH");
 
     const updated = await prisma.$transaction(async (tx) => {
       const invoice = await findBranchScopedInvoice(tx, req, invoiceId);
@@ -267,11 +281,19 @@ router.post(
         data: {
           salesInvoiceId: invoice.id,
           amount: appliedAmount,
-          paymentMethod: req.body.paymentMethod || "CASH",
+          paymentMethod,
           paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : new Date(),
           reference: req.body.reference || null,
           note: req.body.note || null,
         },
+      });
+
+      await applyAccountMovement(tx, {
+        branchId: invoice.branchId,
+        paymentMethod,
+        amount: appliedAmount,
+        direction: "IN",
+        purpose: `sales payment ${invoice.number}`,
       });
 
       if (invoice.customerId && appliedAmount > 0) {
@@ -464,6 +486,7 @@ router.post(
       }
 
       const requestedRefund = safeNumber(req.body.refundAmount, 0);
+      const refundMethod = normalizeAccountType(req.body.refundMethod || "CASH");
       if (requestedRefund < 0) {
         throw new Error("Refund amount cannot be negative.");
       }
@@ -481,6 +504,15 @@ router.post(
       const paidAmount = Math.max(Number(invoice.paidAmount) - refundAmount, 0);
       const dueAmount = Math.max(effectiveInvoiceTotal - paidAmount, 0);
 
+      if (refundAmount > 0) {
+        await ensureAccountHasFunds(tx, {
+          branchId: invoice.branchId,
+          paymentMethod: refundMethod,
+          amount: refundAmount,
+          purpose: `sales return refund ${createdReturn.number}`,
+        });
+      }
+
       await tx.salesReturn.update({
         where: { id: createdReturn.id },
         data: {
@@ -497,6 +529,16 @@ router.post(
           status: deriveInvoiceStatus(dueAmount, paidAmount),
         },
       });
+
+      if (refundAmount > 0) {
+        await applyAccountMovement(tx, {
+          branchId: invoice.branchId,
+          paymentMethod: refundMethod,
+          amount: refundAmount,
+          direction: "OUT",
+          purpose: `sales return refund ${createdReturn.number}`,
+        });
+      }
 
       const ledgerCredit = Math.max(total - refundAmount, 0);
       if (invoice.customerId && ledgerCredit > 0) {

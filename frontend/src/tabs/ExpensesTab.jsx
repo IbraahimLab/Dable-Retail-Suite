@@ -6,6 +6,7 @@ export default function ExpensesTab({
   branches,
   expenseCategories,
   expenses,
+  accounts,
   onCreateExpense,
   onReloadExpenses,
 }) {
@@ -22,10 +23,27 @@ export default function ExpensesTab({
     receipt: null,
   });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const accountBalances = accounts?.balances || {};
+  const availableForMethod = Number(accountBalances[form.paymentMethod] || 0);
 
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
+    if (!activeBranchId) {
+      setError("Select a branch before creating expense.");
+      return;
+    }
+    const amount = Number(form.amount || 0);
+    if (amount <= 0) {
+      setError("Amount must be greater than zero.");
+      return;
+    }
+    if (["CASH", "BANK", "CARD"].includes(form.paymentMethod) && amount > availableForMethod) {
+      setError(`${form.paymentMethod} balance is not enough. Available $${availableForMethod.toFixed(2)}.`);
+      return;
+    }
     try {
       await onCreateExpense({
         ...form,
@@ -39,6 +57,7 @@ export default function ExpensesTab({
         description: "",
         receipt: null,
       });
+      setSuccess("Expense saved.");
     } catch (err) {
       setError(err.message);
     }
@@ -94,6 +113,17 @@ export default function ExpensesTab({
             </select>
           </label>
           <label>
+            Available
+            <input
+              value={
+                ["CASH", "BANK", "CARD"].includes(form.paymentMethod)
+                  ? `$${availableForMethod.toFixed(2)}`
+                  : "N/A"
+              }
+              readOnly
+            />
+          </label>
+          <label>
             Description
             <input
               value={form.description}
@@ -109,6 +139,7 @@ export default function ExpensesTab({
           </label>
           <button type="submit">Save Expense</button>
         </form>
+        {success ? <p className="success-note">{success}</p> : null}
         <InlineError message={error} />
       </Panel>
 

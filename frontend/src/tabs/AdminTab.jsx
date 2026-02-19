@@ -8,12 +8,14 @@ export default function AdminTab({
   users,
   auditLogs,
   backups,
+  onCreateBranch,
   onCreateUser,
   onLoadAuditLogs,
   onCreateBackup,
   onRestoreBackup,
   onReloadUsers,
 }) {
+  const isAdmin = data.user?.role === "ADMIN";
   const [userForm, setUserForm] = useState({
     username: "",
     fullName: "",
@@ -21,11 +23,20 @@ export default function AdminTab({
     roleCode: "",
     branchId: "",
   });
+  const [branchForm, setBranchForm] = useState({
+    code: "",
+    name: "",
+    address: "",
+    phone: "",
+    isActive: true,
+  });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const submitUser = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     try {
       await onCreateUser({
         ...userForm,
@@ -38,6 +49,28 @@ export default function AdminTab({
         roleCode: "",
         branchId: "",
       });
+      setSuccess("User created.");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const submitBranch = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    try {
+      await onCreateBranch({
+        ...branchForm,
+      });
+      setBranchForm({
+        code: "",
+        name: "",
+        address: "",
+        phone: "",
+        isActive: true,
+      });
+      setSuccess("Branch created.");
     } catch (err) {
       setError(err.message);
     }
@@ -45,68 +78,114 @@ export default function AdminTab({
 
   return (
     <div className="tab-grid">
+      {isAdmin ? (
+        <Panel
+          title="Branch Management"
+          subtitle="Admins can add new branches"
+        >
+          <form className="grid-form multi" onSubmit={submitBranch}>
+            <label>
+              Code
+              <input
+                value={branchForm.code}
+                onChange={(e) => setBranchForm((p) => ({ ...p, code: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Name
+              <input
+                value={branchForm.name}
+                onChange={(e) => setBranchForm((p) => ({ ...p, name: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Address
+              <input
+                value={branchForm.address}
+                onChange={(e) => setBranchForm((p) => ({ ...p, address: e.target.value }))}
+              />
+            </label>
+            <label>
+              Phone
+              <input
+                value={branchForm.phone}
+                onChange={(e) => setBranchForm((p) => ({ ...p, phone: e.target.value }))}
+              />
+            </label>
+            <button type="submit">Create Branch</button>
+          </form>
+        </Panel>
+      ) : null}
+
       <Panel
         title="User & Role Management"
         subtitle={`Signed in as ${data.user?.role || ""}`}
         actions={<button onClick={onReloadUsers}>Refresh Users</button>}
       >
-        <form className="grid-form multi" onSubmit={submitUser}>
-          <label>
-            Username
-            <input
-              value={userForm.username}
-              onChange={(e) => setUserForm((p) => ({ ...p, username: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Full Name
-            <input
-              value={userForm.fullName}
-              onChange={(e) => setUserForm((p) => ({ ...p, fullName: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={userForm.password}
-              onChange={(e) => setUserForm((p) => ({ ...p, password: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            Role
-            <select
-              value={userForm.roleCode}
-              onChange={(e) => setUserForm((p) => ({ ...p, roleCode: e.target.value }))}
-              required
-            >
-              <option value="">Select</option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.code}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Branch
-            <select
-              value={userForm.branchId}
-              onChange={(e) => setUserForm((p) => ({ ...p, branchId: e.target.value }))}
-            >
-              <option value="">Select</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit">Create User</button>
-        </form>
+        {isAdmin ? (
+          <form className="grid-form multi" onSubmit={submitUser}>
+            <label>
+              Username
+              <input
+                value={userForm.username}
+                onChange={(e) => setUserForm((p) => ({ ...p, username: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Full Name
+              <input
+                value={userForm.fullName}
+                onChange={(e) => setUserForm((p) => ({ ...p, fullName: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={userForm.password}
+                onChange={(e) => setUserForm((p) => ({ ...p, password: e.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Role
+              <select
+                value={userForm.roleCode}
+                onChange={(e) => setUserForm((p) => ({ ...p, roleCode: e.target.value }))}
+                required
+              >
+                <option value="">Select</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.code}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Branch
+              <select
+                value={userForm.branchId}
+                onChange={(e) => setUserForm((p) => ({ ...p, branchId: e.target.value }))}
+              >
+                <option value="">Select</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit">Create User</button>
+          </form>
+        ) : (
+          <p className="muted-note">Only Admin can create users.</p>
+        )}
+        {success ? <p className="success-note">{success}</p> : null}
         <InlineError message={error} />
       </Panel>
 

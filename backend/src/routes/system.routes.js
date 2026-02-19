@@ -6,6 +6,14 @@ import { AuditAction, RoleCode } from "@prisma/client";
 import prisma from "../prisma.js";
 import { authRequired, authorizeRoles } from "../middleware/auth.js";
 import { logAudit } from "../lib/audit.js";
+import { safeNumber } from "../lib/common.js";
+import { bodyBranchId, queryBranchId } from "../lib/scope.js";
+import {
+  accountTypeFromPaymentMethod,
+  applyAccountMovement,
+  getAccountBalances,
+  setAccountBalances,
+} from "../lib/finance.js";
 
 const router = express.Router();
 const backupsDir = path.join(process.cwd(), "backups");
@@ -68,6 +76,87 @@ router.post("/settings", authorizeRoles(RoleCode.ADMIN, RoleCode.MANAGER), async
   });
   res.json(saved);
 });
+
+router.get("/finance/accounts", async (req, res) => {
+  const branchId = queryBranchId(req);
+  const balances = await getAccountBalances(prisma, branchId);
+  res.json(balances);
+});
+
+router.put("/finance/accounts", authorizeRoles(RoleCode.ADMIN, RoleCode.MANAGER), async (req, res) => {
+  const branchId = bodyBranchId(req, req.body.branchId);
+  const balances = req.body?.balances || {};
+  const saved = await prisma.$transaction((tx) =>
+    setAccountBalances(tx, {
+      branchId,
+      balances,
+    }),
+  );
+
+  await logAudit({
+    userId: req.user.id,
+    action: AuditAction.UPDATE,
+    entityType: "finance_accounts",
+    entityId: branchId,
+    payload: { branchId, balances: saved.balances },
+  });
+
+  res.json(saved);
+});
+
+router.post(
+  "/finance/accounts/adjust",
+  authorizeRoles(RoleCode.ADMIN, RoleCode.MANAGER),
+  async (req, res) => {
+    const branchId = bodyBranchId(req, req.body.branchId);
+    const accountType = accountTypeFromPaymentMethod(req.body.accountType);
+    const amount = safeNumber(req.body.amount, 0);
+    const direction = String(req.body.direction || "IN")
+      .trim()
+      .toUpperCase();
+    const reason = req.body.reason ? String(req.body.reason).trim() : "";
+
+    if (amount <= 0) {
+      return res.status(400).json({ message: "amount must be > 0" });
+    }
+    if (!["IN", "OUT"].includes(direction)) {
+      return res.status(400).json({ message: "direction must be IN or OUT" });
+    }
+    if (!accountType) {
+      return res.status(400).json({ message: "accountType must be CASH, BANK or CARD" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const movement = await applyAccountMovement(tx, {
+        branchId,
+        paymentMethod: accountType,
+        amount,
+        direction,
+        purpose: reason || "manual account adjustment",
+      });
+      const balances = await getAccountBalances(tx, branchId);
+      return {
+        movement,
+        balances,
+      };
+    });
+
+    await logAudit({
+      userId: req.user.id,
+      action: AuditAction.UPDATE,
+      entityType: "finance_account_adjustment",
+      entityId: branchId,
+      payload: {
+        accountType,
+        amount,
+        direction,
+        reason: reason || null,
+      },
+    });
+
+    res.json(result);
+  },
+);
 
 router.post("/system/backup", authorizeRoles(RoleCode.ADMIN), async (req, res) => {
   const source = dbFilePath();

@@ -64,6 +64,7 @@ export default function SalesTab({
     salesItemId: "",
     quantity: 1,
     refundAmount: "",
+    refundMethod: "CASH",
     reason: "",
   });
   const [ledger, setLedger] = useState(null);
@@ -408,6 +409,7 @@ export default function SalesTab({
           },
         ],
         refundAmount: Number(returnForm.refundAmount || 0),
+        refundMethod: returnForm.refundMethod,
         reason: returnForm.reason,
       });
       setReturnForm({
@@ -415,6 +417,7 @@ export default function SalesTab({
         salesItemId: "",
         quantity: 1,
         refundAmount: "",
+        refundMethod: "CASH",
         reason: "",
       });
       setSuccess("Return processed.");
@@ -439,6 +442,7 @@ export default function SalesTab({
       salesItemId: "",
       quantity: 1,
       refundAmount: "",
+      refundMethod: "CASH",
       reason: "",
     });
   };
@@ -496,6 +500,19 @@ export default function SalesTab({
                   setSaleForm((prev) => ({ ...prev, paidAmount: event.target.value }))
                 }
               />
+            </label>
+            <label>
+              Payment Method
+              <select
+                value={saleForm.paymentMethod}
+                onChange={(event) =>
+                  setSaleForm((prev) => ({ ...prev, paymentMethod: event.target.value }))
+                }
+              >
+                <option value="CASH">Cash</option>
+                <option value="BANK">Bank</option>
+                <option value="CARD">Card</option>
+              </select>
             </label>
             <label>
               Note
@@ -819,6 +836,7 @@ export default function SalesTab({
                     salesItemId: "",
                     quantity: 1,
                     refundAmount: "",
+                    refundMethod: "CASH",
                     reason: "",
                   })
                 }
@@ -875,6 +893,19 @@ export default function SalesTab({
                   setReturnForm((prev) => ({ ...prev, refundAmount: event.target.value }))
                 }
               />
+            </label>
+            <label>
+              Refund Method
+              <select
+                value={returnForm.refundMethod}
+                onChange={(event) =>
+                  setReturnForm((prev) => ({ ...prev, refundMethod: event.target.value }))
+                }
+              >
+                <option value="CASH">Cash</option>
+                <option value="BANK">Bank</option>
+                <option value="CARD">Card</option>
+              </select>
             </label>
             <label>
               Reason
