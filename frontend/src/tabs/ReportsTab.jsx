@@ -2,16 +2,44 @@ import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Panel } from "../components/Panel";
 
-export default function ReportsTab({ reports, onLoadReports }) {
+export default function ReportsTab({ reports, onLoadReports, onCloseFiscalYear, userRole, company }) {
+  const canViewOwnerReports = userRole === "ADMIN" || userRole === "MANAGER";
   const [range, setRange] = useState({
     from: "",
     to: "",
+    fiscalYear: String(new Date().getFullYear()),
   });
+  const [closeNote, setCloseNote] = useState("");
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [closeError, setCloseError] = useState("");
+  const [closeSuccess, setCloseSuccess] = useState("");
 
   const run = async (e) => {
     e.preventDefault();
     await onLoadReports(range);
   };
+
+  const closeYear = async () => {
+    setCloseBusy(true);
+    setCloseError("");
+    setCloseSuccess("");
+    try {
+      const result = await onCloseFiscalYear({
+        from: range.from,
+        to: range.to,
+        fiscalYear: Number(range.fiscalYear),
+        note: closeNote,
+      });
+      setCloseSuccess(`Fiscal year ${result?.closing?.fiscalYear} closed successfully.`);
+      setCloseNote("");
+    } catch (error) {
+      setCloseError(error.message);
+    } finally {
+      setCloseBusy(false);
+    }
+  };
+
+  const alreadyClosed = Boolean(reports.yearEndOwner?.closed?.id);
 
   return (
     <div className="tab-grid">
@@ -33,6 +61,18 @@ export default function ReportsTab({ reports, onLoadReports }) {
               onChange={(e) => setRange((p) => ({ ...p, to: e.target.value }))}
             />
           </label>
+          {canViewOwnerReports ? (
+            <label>
+              Fiscal Year
+              <input
+                type="number"
+                min="1900"
+                max="3000"
+                value={range.fiscalYear}
+                onChange={(e) => setRange((p) => ({ ...p, fiscalYear: e.target.value }))}
+              />
+            </label>
+          ) : null}
           <button type="submit">Load Reports</button>
         </form>
       </Panel>
@@ -86,6 +126,178 @@ export default function ReportsTab({ reports, onLoadReports }) {
           </div>
         </div>
       </Panel>
+
+      {canViewOwnerReports ? (
+        <Panel title="Balance Sheet">
+          <div className="kpi-row">
+            <div>
+              <span>Total Assets</span>
+              <strong>${Number(reports.balanceSheet?.assets?.total || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Total Liabilities</span>
+              <strong>${Number(reports.balanceSheet?.liabilities?.total || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Total Equity</span>
+              <strong>${Number(reports.balanceSheet?.equity?.total || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Balance Gap</span>
+              <strong>${Number(reports.balanceSheet?.equation?.balanceGap || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Section</th>
+                  <th>Item</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Assets</td>
+                  <td>Cash + Bank + Card</td>
+                  <td>${Number(reports.balanceSheet?.assets?.cashAndAccounts || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Assets</td>
+                  <td>Receivables</td>
+                  <td>${Number(reports.balanceSheet?.assets?.receivables || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Assets</td>
+                  <td>Inventory Value</td>
+                  <td>${Number(reports.balanceSheet?.assets?.inventoryValue || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Liabilities</td>
+                  <td>Supplier Payables</td>
+                  <td>${Number(reports.balanceSheet?.liabilities?.supplierPayables || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Equity</td>
+                  <td>Opening Capital</td>
+                  <td>${Number(reports.balanceSheet?.equity?.openingCapital || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Equity</td>
+                  <td>Retained Earnings</td>
+                  <td>${Number(reports.balanceSheet?.equity?.retainedEarnings || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Equity</td>
+                  <td>Owner Withdrawals</td>
+                  <td>${Number(reports.balanceSheet?.equity?.ownerWithdrawals || 0).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      ) : null}
+
+      {canViewOwnerReports ? (
+        <Panel
+          title="Year-End Owner Summary"
+          subtitle={`${company?.name || "Company"} | Fiscal ${reports.yearEndOwner?.fiscalYear || range.fiscalYear}`}
+        >
+          <div className="chips">
+            <span className="chip">Period: {reports.yearEndOwner?.period?.label || "-"}</span>
+            <span className="chip">Owner: {reports.yearEndOwner?.company?.ownerName || "-"}</span>
+          </div>
+          <div className="kpi-row">
+            <div>
+              <span>Revenue</span>
+              <strong>${Number(reports.yearEndOwner?.revenue || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Net Profit</span>
+              <strong>${Number(reports.yearEndOwner?.netProfit || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Owner Withdrawn</span>
+              <strong>${Number(reports.yearEndOwner?.ownerWithdrawals || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Available Funds</span>
+              <strong>${Number(reports.yearEndOwner?.yearEndPosition?.availableFunds || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+          <div className="kpi-row">
+            <div>
+              <span>Suggested Owner Take</span>
+              <strong>${Number(reports.yearEndOwner?.ownerTakeGuide?.suggestedTakeNow || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Max by Profit</span>
+              <strong>${Number(reports.yearEndOwner?.ownerTakeGuide?.maxByProfit || 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>Max by Cash</span>
+              <strong>${Number(reports.yearEndOwner?.ownerTakeGuide?.maxByCash || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+          <div className="grid-form multi">
+            <label>
+              Close Note (optional)
+              <input value={closeNote} onChange={(e) => setCloseNote(e.target.value)} />
+            </label>
+            <label>
+              Closed Status
+              <input
+                readOnly
+                value={
+                  reports.yearEndOwner?.closed
+                    ? `Closed on ${new Date(reports.yearEndOwner.closed.closedAt).toLocaleDateString()}`
+                    : "Open"
+                }
+              />
+            </label>
+            <button type="button" onClick={closeYear} disabled={closeBusy || alreadyClosed}>
+              {alreadyClosed ? "Fiscal Year Closed" : closeBusy ? "Closing..." : "Close Fiscal Year"}
+            </button>
+          </div>
+          {reports.yearEndOwner?.closed ? (
+            <div className="chips">
+              <span className="chip">Closed By: {reports.yearEndOwner.closed.closedBy?.username || "-"}</span>
+              <span className="chip">Closed At: {new Date(reports.yearEndOwner.closed.closedAt).toLocaleString()}</span>
+            </div>
+          ) : null}
+          {closeSuccess ? <p className="success-note">{closeSuccess}</p> : null}
+          {closeError ? <p className="error-text">{closeError}</p> : null}
+        </Panel>
+      ) : null}
+
+      {canViewOwnerReports ? (
+        <Panel title="Closed Fiscal Years">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fiscal Year</th>
+                  <th>Branch</th>
+                  <th>Closed At</th>
+                  <th>Closed By</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(reports.fiscalClosings?.closings || []).map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.fiscalYear}</td>
+                    <td>{row.branch?.name || "-"}</td>
+                    <td>{new Date(row.closedAt).toLocaleString()}</td>
+                    <td>{row.closedBy?.username || "-"}</td>
+                    <td>{row.note || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      ) : null}
 
       <Panel title="Cash Flow">
         <div className="kpi-row">

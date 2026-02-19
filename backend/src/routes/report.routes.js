@@ -6,6 +6,8 @@ import { authRequired, authorizeRoles } from "../middleware/auth.js";
 import { parseDateRange } from "../lib/common.js";
 import { queryBranchId } from "../lib/scope.js";
 import { getAccountBalances } from "../lib/finance.js";
+import { ensureCompany } from "../lib/company.js";
+import { buildBalanceSheetReport, buildYearEndOwnerReport } from "../lib/year-end.js";
 
 const router = express.Router();
 
@@ -629,6 +631,38 @@ router.get("/reports/income-statement", async (req, res) => {
     expenseCount: expenseSummary._count.id || 0,
   });
 });
+
+router.get(
+  "/reports/balance-sheet",
+  authorizeRoles(RoleCode.ADMIN, RoleCode.MANAGER),
+  async (req, res) => {
+    const branchId = queryBranchId(req);
+    const company = await ensureCompany(prisma, { name: "Dable Company" });
+    const report = await buildBalanceSheetReport(prisma, { company, branchId });
+    if (!report) {
+      return res.status(404).json({ message: "Branch not found." });
+    }
+    return res.json(report);
+  },
+);
+
+router.get(
+  "/reports/year-end-owner",
+  authorizeRoles(RoleCode.ADMIN, RoleCode.MANAGER),
+  async (req, res) => {
+    const branchId = queryBranchId(req);
+    const company = await ensureCompany(prisma, { name: "Dable Company" });
+    const report = await buildYearEndOwnerReport(prisma, {
+      company,
+      branchId,
+      fiscalYear: req.query.fiscalYear,
+    });
+    if (!report) {
+      return res.status(404).json({ message: "Branch not found." });
+    }
+    return res.json(report);
+  },
+);
 
 router.get(
   "/reports/branch-summary",

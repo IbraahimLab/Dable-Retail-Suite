@@ -129,6 +129,28 @@ model Branch {
   settings     Setting[]
   goals        Goal[]
   dailyTasks   DailyTask[]
+  ownerWithdrawals OwnerWithdrawal[]
+  fiscalClosings FiscalYearClose[]
+}
+
+model Company {
+  id                   Int               @id @default(autoincrement())
+  name                 String
+  legalName            String?
+  registrationNumber   String?
+  taxNumber            String?
+  phone                String?
+  email                String?
+  address              String?
+  currency             String            @default("USD")
+  startDate            DateTime?
+  fiscalYearStartMonth Int               @default(1)
+  openingCapital       Float             @default(0)
+  ownerName            String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  ownerWithdrawals     OwnerWithdrawal[]
+  fiscalClosings       FiscalYearClose[]
 }
 
 model User {
@@ -151,6 +173,8 @@ model User {
   returns      SalesReturn[]
   goals        Goal[]
   dailyTasks   DailyTask[]
+  ownerWithdrawals OwnerWithdrawal[] @relation("OwnerWithdrawalCreatedBy")
+  fiscalClosings FiscalYearClose[] @relation("FiscalYearClosedBy")
 }
 
 model Category {
@@ -599,4 +623,43 @@ model BackupHistory {
   filePath  String
   createdAt DateTime @default(now())
   sizeBytes Int
+}
+
+model OwnerWithdrawal {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  branchId      Int
+  amount        Float
+  paymentMethod String   @default("CASH")
+  withdrawnAt   DateTime @default(now())
+  note          String?
+  createdById   Int?
+  createdAt     DateTime @default(now())
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy     User?    @relation("OwnerWithdrawalCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, withdrawnAt])
+  @@index([branchId, withdrawnAt])
+  @@index([createdById])
+}
+
+model FiscalYearClose {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  branchId    Int
+  fiscalYear  Int
+  periodStart DateTime
+  periodEnd   DateTime
+  summary     String
+  note        String?
+  closedAt    DateTime @default(now())
+  closedById  Int?
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  closedBy    User?    @relation("FiscalYearClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+
+  @@unique([branchId, fiscalYear])
+  @@index([companyId, fiscalYear])
+  @@index([closedById])
 }

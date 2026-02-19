@@ -63,6 +63,8 @@ function App() {
 
   const [roles, setRoles] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [company, setCompany] = useState(null);
+  const [setupStatus, setSetupStatus] = useState(null);
   const [users, setUsers] = useState([]);
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
@@ -79,6 +81,11 @@ function App() {
   const [backups, setBackups] = useState([]);
   const [goals, setGoals] = useState([]);
   const [dailyTasks, setDailyTasks] = useState([]);
+  const [ownerWithdrawals, setOwnerWithdrawals] = useState({
+    count: 0,
+    totalAmount: 0,
+    items: [],
+  });
   const [accounts, setAccounts] = useState({
     branchId: null,
     balances: { CASH: 0, BANK: 0, CARD: 0 },
@@ -96,6 +103,9 @@ function App() {
     accountsPayable: { suppliers: [] },
     cashFlow: null,
     incomeStatement: null,
+    balanceSheet: null,
+    yearEndOwner: null,
+    fiscalClosings: { closings: [] },
   });
 
   const token = session?.token;
@@ -140,13 +150,16 @@ function App() {
       return;
     }
     setError("");
-    const [me, branchList, roleList, categoryList, unitList, expCatList] = await Promise.all([
+    const [me, branchList, roleList, categoryList, unitList, expCatList, companyProfile, setupChecklist] =
+      await Promise.all([
       call({ url: "/auth/me" }),
       call({ url: "/branches" }),
       call({ url: "/roles" }),
       call({ url: "/categories" }),
       call({ url: "/units" }),
       call({ url: "/expense-categories" }),
+      call({ url: "/company/profile" }),
+      call({ url: "/company/setup-status" }),
     ]);
     setSession((prev) => ({ ...prev, user: me }));
     setBranches(branchList);
@@ -154,6 +167,8 @@ function App() {
     setCategories(categoryList);
     setUnits(unitList);
     setExpenseCategories(expCatList);
+    setCompany(companyProfile);
+    setSetupStatus(setupChecklist);
 
     if (!selectedBranchId) {
       const fallbackBranchId = me.branchId || branchList[0]?.id || null;
@@ -262,6 +277,26 @@ function App() {
     [branchParams, call, token],
   );
 
+  const loadOwnerWithdrawals = useCallback(
+    async (filters = {}) => {
+      if (!token || (user?.role !== "ADMIN" && user?.role !== "MANAGER")) {
+        const empty = { count: 0, totalAmount: 0, items: [] };
+        setOwnerWithdrawals(empty);
+        return empty;
+      }
+      const result = await call({
+        url: "/owner-withdrawals",
+        params: {
+          ...branchParams,
+          ...filters,
+        },
+      });
+      setOwnerWithdrawals(result);
+      return result;
+    },
+    [branchParams, call, token, user?.role],
+  );
+
   useEffect(() => {
     if (!token) {
       return;
@@ -302,6 +337,21 @@ function App() {
     }
     loadAdminData();
   }, [loadAdminData, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    if (user?.role !== "ADMIN" && user?.role !== "MANAGER") {
+      return;
+    }
+    if (!selectedBranchId) {
+      return;
+    }
+    loadOwnerWithdrawals().catch(() => {
+      setOwnerWithdrawals({ count: 0, totalAmount: 0, items: [] });
+    });
+  }, [loadOwnerWithdrawals, selectedBranchId, token, user?.role]);
 
   const refreshProducts = () => loadBranchData();
   const refreshPurchases = () => loadBranchData();
@@ -413,9 +463,21 @@ function App() {
     await loadCore();
     await loadBranchData();
   };
+  const saveCompanyProfile = async (payload) => {
+    const updated = await call({ url: "/company/profile", method: "PUT", data: payload });
+    setCompany(updated);
+    const checklist = await call({ url: "/company/setup-status" });
+    setSetupStatus(checklist);
+  };
   const createUser = async (payload) => {
     await call({ url: "/users", method: "POST", data: payload });
     await refreshUsers();
+  };
+  const createOwnerWithdrawal = async (payload) => {
+    const result = await call({ url: "/owner-withdrawals", method: "POST", data: payload });
+    await loadOwnerWithdrawals();
+    await loadBranchData();
+    return result;
   };
   const createGoal = async (payload) => {
     return call({ url: "/goals", method: "POST", data: payload });
@@ -472,6 +534,7 @@ function App() {
       ...branchParams,
       from: range?.from || undefined,
       to: range?.to || undefined,
+      fiscalYear: range?.fiscalYear || undefined,
     };
     const [
       profit,
@@ -494,6 +557,16 @@ function App() {
       call({ url: "/reports/cash-flow", params }),
       call({ url: "/reports/income-statement", params }),
     ]);
+    let balanceSheet = null;
+    let yearEndOwner = null;
+    let fiscalClosings = { closings: [] };
+    if (user?.role === "ADMIN" || user?.role === "MANAGER") {
+      [balanceSheet, yearEndOwner, fiscalClosings] = await Promise.all([
+        call({ url: "/reports/balance-sheet", params }),
+        call({ url: "/reports/year-end-owner", params }),
+        call({ url: "/fiscal-years/close", params: branchParams }),
+      ]);
+    }
     setReports((prev) => ({
       ...prev,
       profit,
@@ -505,14 +578,35 @@ function App() {
       accountsPayable,
       cashFlow,
       incomeStatement,
+      balanceSheet,
+      yearEndOwner,
+      fiscalClosings,
     }));
+  };
+
+  const closeFiscalYear = async (payload) => {
+    const result = await call({
+      url: "/fiscal-years/close",
+      method: "POST",
+      data: {
+        ...branchParams,
+        fiscalYear: payload?.fiscalYear,
+        note: payload?.note || null,
+      },
+    });
+    await loadReports({
+      from: payload?.from,
+      to: payload?.to,
+      fiscalYear: payload?.fiscalYear,
+    });
+    return result;
   };
 
   if (!session) {
     return <LoginPage onLogin={onLogin} />;
   }
 
-  const data = { user, selectedBranchId };
+  const data = { user, selectedBranchId, company, setupStatus };
   const activeTitle = pageTitles[location.pathname] || "Dable Retail Suite";
   const availableNav = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
 
@@ -707,7 +801,18 @@ function App() {
                 )
               }
             />
-            <Route path="/reports" element={<ReportsTab reports={reports} onLoadReports={loadReports} />} />
+            <Route
+              path="/reports"
+              element={
+                <ReportsTab
+                  reports={reports}
+                  onLoadReports={loadReports}
+                  onCloseFiscalYear={closeFiscalYear}
+                  userRole={user?.role}
+                  company={company}
+                />
+              }
+            />
             <Route
               path="/admin"
               element={
@@ -721,6 +826,12 @@ function App() {
                     backups={backups}
                     onCreateBranch={createBranch}
                     onCreateUser={createUser}
+                    company={company}
+                    setupStatus={setupStatus}
+                    ownerWithdrawals={ownerWithdrawals}
+                    onSaveCompanyProfile={saveCompanyProfile}
+                    onCreateOwnerWithdrawal={createOwnerWithdrawal}
+                    onLoadOwnerWithdrawals={loadOwnerWithdrawals}
                     onLoadAuditLogs={loadAuditLogs}
                     onCreateBackup={createBackup}
                     onRestoreBackup={restoreBackup}

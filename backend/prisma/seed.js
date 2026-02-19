@@ -12,6 +12,18 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+  const existingCompany = await prisma.company.findFirst({ orderBy: { id: "asc" } });
+  const company =
+    existingCompany ||
+    (await prisma.company.create({
+      data: {
+        name: "Dable Company",
+        currency: "USD",
+        fiscalYearStartMonth: 1,
+        openingCapital: 0,
+      },
+    }));
+
   const roles = [
     { code: RoleCode.ADMIN, name: "Admin" },
     { code: RoleCode.MANAGER, name: "Manager" },
@@ -187,6 +199,8 @@ async function main() {
   console.log(`Default branch: ${branch.name} (${branch.code})`);
   // eslint-disable-next-line no-console
   console.log(`Default customer: ${customer.name}`);
+  // eslint-disable-next-line no-console
+  console.log(`Company profile: ${company.name}`);
 }
 
 main()

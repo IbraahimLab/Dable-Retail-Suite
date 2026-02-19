@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { RoleCode } from "@prisma/client";
 import prisma from "../prisma.js";
+import { ensureCompany } from "./company.js";
 
 const roleMatrix = [
   { code: RoleCode.ADMIN, name: "Admin" },
@@ -24,6 +25,13 @@ const baseExpenseCategories = [
 ];
 
 export async function ensureDefaults() {
+  await ensureCompany(prisma, {
+    name: "Dable Company",
+    currency: "USD",
+    fiscalYearStartMonth: 1,
+    openingCapital: 0,
+  });
+
   for (const role of roleMatrix) {
     await prisma.role.upsert({
       where: { code: role.code },
